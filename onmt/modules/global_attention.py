@@ -48,13 +48,8 @@ class GlobalAttention(nn.Module):
         if coverage:
             self.linear_cover = nn.Linear(1, dim, bias=False)
     def softmax(self,scores,g):
-        v, _ = torch.max(scores, 0)
-        # print(v)
-        # if v[0]<=0:
-        #     v,_ = torch.min(scores)
+        v, _ = torch.max(scores,0)
         scores = scores-v
-        # print(v)
-        # scores = torch.exp(scores * g)
         scores = torch.exp(scores) * g
         return scores
 
@@ -99,44 +94,36 @@ class GlobalAttention(nn.Module):
             h_s += self.linear_cover(cover).view_as(h_s)
             h_s = torch.tanh(h_s)
 
-        print('h_t',h_t,file=filename)
+        # print('h_t',h_t,file=filename)
         '''Main Modification'''
         # Expand the target hidden state to concatenate with the source hidden state.
         H_t = h_t.expand(-1,source_l,-1)
-        # print(torch.isnan(H_t),file=filename)
         concat_h = torch.cat([auxi_hs,H_t],2).view(batch*source_l,dim*2) # (batch*source_l,dim*2)
-        # print('whereis nan concat_h',torch.isnan(concat_h),file=filename)
         new_concat_h = self.linear_map(concat_h).view(batch,source_l,1)
-        # print('whereis nan new_concat_h',torch.isnan(new_concat_h),file=filename)
         # Calculate the probability of the ouput of auxiliary network.
         p = self.sigmoid(new_concat_h) # (batch,source_l,1)
 
         # Get the distribution of gate which follows the Bernoulli distribution with probability p.
         # For trainning:
-        print(p)
-        G = RelaxedBernoulli(torch.tensor([9]).cuda(),p).sample() # hyperparameter--temperature. (batch,source_l,1)
-        # print('G',G,file=filename)
-        # print('G', G)
+        G = RelaxedBernoulli(torch.tensor([1]).cuda(),p).sample() # hyperparameter--temperature. (batch,source_l,1)
         # For testing:
         # G = Bernoulli(p)
 
         # e = MLP(h_s) to get the infomation of source hidden state.
         e = self.mlp_h(h_s)
-        # print('e',e,file=filename)
         e = e.view(batch,source_l,1)
 
         # Calculate the alignment score.
         align_score = (self.softmax(e,G)).transpose(1,2) # align_score--(batch,1,source)
-        # align_score = (G*torch.exp((e))).transpose(1,2) # align_score--(batch,1,source)
-        print('score',align_score,file=filename)
 
         if memory_lengths is not None:
-            mask = sequence_mask(memory_lengths, max_len=source_l)
+            mask = sequence_mask(memory_lengths, max_len=align_score.size(-1))
             mask = mask.unsqueeze(1)  # Make it broadcastable.
-            align_score.masked_fill_(~mask, -float('inf'))
+            # align_score.masked_fill_(~mask, -float('inf')) # the original one--it may cause nan.
+            align_score.masked_fill_(~mask, -100000) # my settings.
 
         align_vectors = align_score / torch.sum(align_score,2,keepdim=True) # alpha--(batch,1,source_l)
-
+        print(align_vectors,file=filename)
         # Calculate the context vectors.
         c = torch.bmm(align_vectors,h_s) # context_vec--(batch,1,dim)
 
