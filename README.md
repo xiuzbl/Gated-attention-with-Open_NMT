@@ -6,6 +6,6 @@ My main modification in the global_attention(/onmt/modules/global_attention.py) 
 
 The current accuracy of this program is around 65%. I will continue to work on it to get a better performance. 
 
-
+4.11--Dealing with NAN: changing hyperparameter of relaxedBernoulli and changing learning rate cannot solve the problem.
 
 ### 
